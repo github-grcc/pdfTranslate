@@ -3,7 +3,7 @@
 将日文将棋 PDF 电子书转换为「中文翻译文本 + 原版棋盘插图」的 Markdown 文件。
 
 **两步工作流：**
-1. **`annotate.py`** — 手动标注棋盘插图位置 + 标记书页码
+1. **`annotate.py`** — 手动标注棋盘插图位置、裁剪页面边距、标记书页码
 2. **`translate.py`** — MIMO 多模态模型 OCR + 翻译，输出带书页码的 Markdown
 
 ## 依赖
@@ -25,42 +25,55 @@ MIMO_API_KEY=sk-xxx python3 translate.py book.pdf book_boards.json
 
 输出在 `book_cn/` 下。
 
+---
+
 ## Step 1 — annotate.py
 
 ```bash
-python3 annotate.py <pdf路径> [--dpi 200] [--output boards.json]
+python3 annotate.py <pdf路径> [--dpi 300] [--output boards.json]
 ```
 
-交互操作：
+### 交互操作
 
 | 按键 | 功能 |
 |------|------|
-| 鼠标拖拽 | 框选一个棋盘/插图区域 |
+| 鼠标拖拽 | 框选一个棋盘/插图区域（红色矩形） |
 | `n` | 下一页（保存当前页标注） |
 | `b` | 上一页（保存当前页标注） |
 | `d` | 撤销当前页最后一个框 |
-| `c` | **从上一页复制标注**（排版固定时快速标注） |
+| `c` + `1~9` | **将当前页标注存入槽位**（支持 9 个槽位） |
+| `1~9` | **从槽位读取标注并应用到当前页** |
 | `m` | **标记/取消当前页为书的第一页**（正文首页） |
+| `x` | **进入/退出裁剪模式**（拖拽设定内容区域，裁去四周边距） |
 | `s` | 跳过（标记为无插图） |
 | `q` | 保存并退出 |
 
-### 新功能说明
+### 功能详解
 
-**`c` — 复制上一页标注**
-将棋书的版面通常比较固定，相邻页面的棋盘位置往往相同。按 `c` 可一键复制上一页的所有矩形到当前页，然后微调即可。
+**槽位复制（`c` + 数字）**
+将棋书不同章节的版面布局可能不同。按 `c` 再按数字键（1~9），将当前页标注存入对应槽位。之后翻到同布局的页面，直接按数字键即可加载。槽位数据持久化到 boards.json，下次打开标注工具时自动恢复。
 
-**`f` — 标记首页**
-棋书的页码通常与 PDF 页码不一致（PDF 前几页是封面、目录等）。翻到正文"第1页"时按 `f`，程序记录此偏移量，最终输出时自动换算为正确的书页码。
+**标记首页（`m`）**
+棋书的页码通常与 PDF 页码不一致（PDF 前几页是封面、目录等）。翻到正文"第1页"时按 `m`，程序记录此偏移量，翻译时自动换算为正确的书页码。
 
-标注保存在 `<pdf名>_boards.json`，其中包含：
+**页面裁剪（`x`）**
+按 `x` 进入裁剪模式，拖拽鼠标绘制绿色虚线矩形框选内容区域（裁去四周空白边距），再按 `x` 退出。裁剪对所有页面生效，翻译时仅发送有效内容区域给 MIMO，节省 token。
+
+### 输出
+
+标注保存在 `<pdf名>_boards.json`：
 ```json
 {
   "_book_first_page": 5,
+  "_page_crop": [80, 60, 1100, 1550],
+  "_slots": {"1": [[200, 300, 400, 350]], "2": [[...]]},
   "page_1": [[100, 200, 500, 400], ...],
   "page_2": [],
   ...
 }
 ```
+
+---
 
 ## Step 2 — translate.py
 
@@ -72,8 +85,8 @@ MIMO_API_KEY=sk-xxx python3 translate.py <pdf路径> <boards.json> [选项]
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--dpi` | 200 | 渲染分辨率（发送给 MIMO 的图片 DPI） |
-| `--annotation-dpi` | 等于 `--dpi` | 标注时的 DPI（不同时自动缩放坐标） |
+| `--dpi` | 150 | 发送给 MIMO 的图片 DPI |
+| `--annotation-dpi` | 300 | 标注时的 DPI（不同时自动缩放坐标） |
 | `--api-key` | - | MIMO API key，或设 `MIMO_API_KEY` 环境变量 |
 | `--base-url` | `https://api.xiaomimimo.com/v1` | MIMO API 地址 |
 | `--model` | mimo-v2.5 | MIMO 模型名 |
@@ -86,11 +99,20 @@ MIMO_API_KEY=sk-xxx python3 translate.py <pdf路径> <boards.json> [选项]
 
 ### 工作流程
 
-1. 将 PDF 按页渲染为 PNG
-2. 根据标注坐标裁剪棋盘区域 → `images/pageN_boardM.jpg`
-3. 将棋盘区域涂黑（减少 MIMO 图像 token 消耗）
-4. 将涂黑后的页面图片发给 MIMO，由 MIMO 完成 OCR 识别 + 日中翻译
-5. 组装输出：翻译文字 + 棋盘插图引用 + `【第x页】` 书页码
+1. 将 PDF 按页渲染为 PNG（150 DPI）
+2. 应用 _page_crop 裁去页面边距
+3. 根据标注坐标裁剪棋盘区域 → `images/pageN_boardM.jpg`
+4. 将棋盘区域涂黑（减少 MIMO 图像 token 消耗）
+5. 将涂黑后的页面图片 + 术语词库发送给 MIMO，完成 OCR + 翻译
+6. 组装输出：棋盘插图 + 翻译文字 + `【第x页】` 书页码
+
+### 翻译特性
+
+- **棋步格式**：▲ → ☗（先手），△ → ☖（后手），格式 `☗7六步` `☖3四步`
+- **术语准确**：内置 100+ 条将棋术语词库（`glossary.py`），注入 system prompt
+- **标题加粗**：章节标题用 Markdown `**标题**` 格式
+- **缓存优化**：system prompt 和 user text 在所有页面中相同，命中 MIMO 前缀缓存
+- **缓存日志**：每页翻译后显示缓存命中情况 `(cache: 580/2500 = 23%)`
 
 ### 续译
 
@@ -102,27 +124,14 @@ MIMO_API_KEY=sk-xxx python3 translate.py book.pdf book_boards.json --resume
 
 进度缓存在 `<输出目录>/translate_progress.json`，完成后自动清除。
 
-### 术语翻译
-
-内置将棋术语词库（`glossary.py`），在调用 MIMO 时作为 system prompt 注入，确保：
-
-- 飛車 → 飞车（不会误译为"战车"）
-- 居飛車 → 居飞车
-- 詰み → 将死
-- 手筋 → 手筋（不会直译为"手部肌肉"）
-- 保留棋谱符号 ▲ △ 及坐标格式
+---
 
 ## 示例
 
 ```bash
 # 常规流程
-python3 annotate.py book.pdf --dpi 200
+python3 annotate.py book.pdf
 MIMO_API_KEY=sk-xxx python3 translate.py book.pdf book_boards.json
-
-# 高 DPI 标注 + 低 DPI 翻译（节省 token）
-python3 annotate.py book.pdf --dpi 300
-MIMO_API_KEY=sk-xxx python3 translate.py book.pdf book_boards.json \
-    --dpi 200 --annotation-dpi 300
 
 # 断点续译
 MIMO_API_KEY=sk-xxx python3 translate.py book.pdf book_boards.json --resume
@@ -143,13 +152,13 @@ book_cn/
     └── ...
 ```
 
-每页以 `【第x页】` 标记书中页码，棋盘插图以 `![board](images/pageN_boardM.jpg)` 引用。
+每页以 `【第x页】` 标记书中页码，棋盘插图前置，翻译文字紧随其后。
 
 ## 文件说明
 
 | 文件 | 用途 |
 |------|------|
-| `annotate.py` | 交互式标注 GUI |
-| `translate.py` | MIMO 翻译管道 |
-| `glossary.py` | 将棋术语词库 |
+| `annotate.py` | 交互式标注 GUI（棋盘框选、首页标记、页面裁剪、槽位复制） |
+| `translate.py` | MIMO 多模态翻译管道（PDF→图片→API→Markdown） |
+| `glossary.py` | 将棋术语词库（100+ 条，注入 LLM system prompt） |
 | `process.py` | （保留）旧版 Doc2x OCR 处理流程，与翻译流程无关 |
