@@ -161,4 +161,3 @@ book_cn/
 | `annotate.py` | 交互式标注 GUI（棋盘框选、首页标记、页面裁剪、槽位复制） |
 | `translate.py` | MIMO 多模态翻译管道（PDF→图片→API→Markdown） |
 | `glossary.py` | 将棋术语词库（100+ 条，注入 LLM system prompt） |
-| `process.py` | （保留）旧版 Doc2x OCR 处理流程，与翻译流程无关 |
