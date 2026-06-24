@@ -1,0 +1,23 @@
+# Generated output
+*_cn*/
+*_cn*_*/
+*_clean*/
+*_pages_*dpi/
+
+# Annotation data
+*_boards.json
+translate_progress.json
+
+# API keys
+.env
+
+# PDFs
+*.pdf
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
