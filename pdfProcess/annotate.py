@@ -32,6 +32,8 @@ def main():
     parser.add_argument("pdf_path", help="Path to PDF file")
     parser.add_argument("--dpi", type=int, default=300, help="Resolution for page images (default: 300)")
     parser.add_argument("--output", default=None, help="Output annotation JSON path (default: boards.json next to PDF)")
+    parser.add_argument("--export-images", action="store_true",
+                        help="Export cropped board images from existing annotations and exit")
     args = parser.parse_args()
 
     pdf_path = os.path.abspath(args.pdf_path)
@@ -61,6 +63,55 @@ def main():
             check=True,
         )
     png_files = sorted(glob.glob(os.path.join(png_dir, "page-*.png")))
+
+    # ── Export images mode ─────────────────────────────────
+    if args.export_images:
+        page_keys = [k for k in annotations if k.startswith("page_")]
+        if not page_keys:
+            print("Error: no page annotations found. Annotate first, then export.")
+            sys.exit(1)
+
+        from PIL import Image as PILImage
+        out_dir = os.path.join(pdf_dir, f"{pdf_name}_boards_export")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Load page_crop if present
+        page_crop = annotations.get("_page_crop", None)
+        cx, cy, cw, ch = page_crop if page_crop else (0, 0, 0, 0)
+
+        png_files = sorted(glob.glob(os.path.join(png_dir, "page-*.png")))
+        total_exported = 0
+
+        for i, png_path in enumerate(png_files):
+            page_num = i + 1
+            key = f"page_{page_num}"
+            page_rects = annotations.get(key, [])
+            if not page_rects:
+                continue
+
+            img = PILImage.open(png_path).convert("RGB")
+            # Apply page crop
+            if page_crop and cw > 0 and ch > 0:
+                img = img.crop((cx, cy, cx + cw, cy + ch))
+
+            for idx, (x, y, w, h) in enumerate(page_rects):
+                sx = x - cx
+                sy = y - cy
+                sx = max(sx, 0)
+                sy = max(sy, 0)
+                sw = min(w, img.width - sx)
+                sh = min(h, img.height - sy)
+                if sw <= 0 or sh <= 0:
+                    continue
+                board_img = img.crop((sx, sy, sx + sw, sy + sh))
+                img_name = f"page{page_num}_board{idx + 1}.jpg"
+                board_img.save(os.path.join(out_dir, img_name), quality=95)
+                total_exported += 1
+                print(f"  Page {page_num} board {idx + 1}: {img_name}")
+
+        print(f"\nExported {total_exported} board images to {out_dir}/")
+        sys.exit(0)
+
     total = len(png_files)
     print(f"{total} pages")
 
